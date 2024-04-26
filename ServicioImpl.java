@@ -29,7 +29,60 @@ public class ServicioImpl implements Servicio {
 		PreparedStatement st = null;
 		ResultSet rs = null;
 
-		// A completar por el alumno
+		try {
+			con = PoolDeConexiones.getInstance().getConnection();
+			// Primero, verificamos si el ticket existe y está vinculado al viaje adecuado
+			String query = "SELECT idViaje, cantidad FROM tickets WHERE idTicket = ?";
+			st = con.prepareStatement(query);
+			st.setInt(1, ticket);
+			rs = st.executeQuery();
+			if (!rs.next()) {
+				con.rollback();
+				throw new CompraBilleteTrenException(3);
+			}
+			int idViaje = rs.getInt("idViaje");
+			int cantidad = rs.getInt("cantidad");
+			if (cantidad < nroPlazas) {
+				con.rollback();
+				throw new CompraBilleteTrenException(4);
+			}
+
+			// Actualizar la cantidad de plazas libres en el viaje correspondiente
+			String updateViajeQuery = "UPDATE viajes SET nPlazasLibres = nPlazasLibres + ? WHERE idViaje = ?";
+			PreparedStatement updateViajeSt = con.prepareStatement(updateViajeQuery);
+			updateViajeSt.setInt(1, nroPlazas);
+			updateViajeSt.setInt(2, idViaje);
+			updateViajeSt.executeUpdate();
+
+			// Actualizar el ticket si es necesario
+			if (cantidad == nroPlazas) {
+				// Si las plazas a anular son todas las compradas, podemos eliminar el ticket
+				String deleteTicketQuery = "DELETE FROM tickets WHERE idTicket = ?";
+				PreparedStatement deleteTicketSt = con.prepareStatement(deleteTicketQuery);
+				deleteTicketSt.setInt(1, ticket);
+				deleteTicketSt.executeUpdate();
+			} else {
+				// Reducir la cantidad de plazas en el ticket
+				String updateTicketQuery = "UPDATE viajes SET nPlazasLibres = nPlazasLibres + ? WHERE idViaje = ?";
+				PreparedStatement updateTicketSt = con.prepareStatement(updateTicketQuery);
+				updateTicketSt.setInt(1, nroPlazas);
+				updateTicketSt.setInt(2, idViaje);
+				updateTicketSt.executeUpdate();
+			}
+			con.commit();
+		} catch (SQLException e) {
+			LOGGER.error("SQL Error: ", e);
+			if (con != null)
+				con.rollback();
+			throw e;
+		} finally {
+			if (rs != null)
+				rs.close();
+			if (st != null)
+				st.close();
+			if (con != null)
+				con.close();
+		}
 	}
 
 	@Override
